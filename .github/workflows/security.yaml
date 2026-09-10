@@ -1,0 +1,25 @@
+# Security-проверка проекта AI Platform. Тонкий caller: вся логика —
+# в центральном reusable workflow (dodo-ai-platform/security-workflows),
+# обновляется в одном месте без правок в каждой репе.
+#
+# Per-repo override'ы (игнор-пути, форс стека, профиль) — в файле
+# .aitriage.yaml в корне репы.
+name: Security Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  aitriage:
+    # TODO: после первого релиза security-workflows запиннить на SHA/тег
+    # вместо @main (наша M9-гигиена supply-chain).
+    uses: dodo-ai-platform/security-workflows/.github/workflows/aitriage.yml@main
+    # with:                    # опц. — по умолчанию авто-детект стека
+    #   stack: nextjs
+    #   project-dir: app
+    #   health-profile: baseline

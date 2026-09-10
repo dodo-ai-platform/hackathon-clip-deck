@@ -1,0 +1,73 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+
+# Деплои одного репозитория выполняются по очереди, а не параллельно:
+# cancel-in-progress: false — прервать `kubectl apply` на середине хуже, чем
+# подождать. Стоящий в очереди прогон минут не тратит.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # Потолок на джоб. Дефолт GitHub — 360 мин, и снизить его настройкой
+    # уровня организации нельзя, поэтому граница задаётся здесь: залипший
+    # docker build или rollout иначе держит раннер 6 часов (в июле 2026 так
+    # сгорело 49% минут org).
+    #
+    # 30 мин = запас к наблюдаемым временам сборки (медиана 2 мин, p95 11 мин
+    # по проектам платформы). Тяжёлой сборке лимит поднять — это дефолт, а не
+    # предел.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Deploy to cluster
+        run: |
+          # Honest rollout: любой сбой шага валит job (нет зелёного CI поверх
+          # упавшего деплоя). Ревью H4.
+          set -euo pipefail
+
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_B64 }}" | base64 -d > ~/.kube/config
+
+          NAMESPACE="${{ github.event.repository.name }}"
+
+          # Set image tag in manifests and apply
+          sed -i "s|IMAGE_TAG|${{ github.sha }}|g" k8s/*.yaml
+          kubectl apply -f k8s/ -n "$NAMESPACE"
+
+          # Wait for rollout. Имя деплоймента берём из самого манифеста
+          # (`-f`), а не парсингом `grep name:` — устойчиво к label `name:`
+          # и нескольким объектам. Таймаут не достигнут → exit !=0 → set -e
+          # валит шаг (rollout status уже ждёт сам, ретрай-цикл не нужен).
+          kubectl rollout status -f k8s/deployment.yaml -n "$NAMESPACE" --timeout=180s
