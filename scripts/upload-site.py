@@ -19,7 +19,11 @@ for root, _, files in os.walk(src):
         ctype = mimetypes.guess_type(path)[0] or 'application/octet-stream'
         if ctype == 'text/html':
             ctype = 'text/html; charset=utf-8'
-        cache = 'no-cache' if key == 'index.html' else 'public, max-age=31536000, immutable'
+        # no-cache для всего: файлы заменяются под теми же именами (index.html,
+        # media/chat.mp4), а иммутабельный кэш показывал бы докладчику старую
+        # версию. Браузер всё равно кэширует, но каждый раз переспрашивает —
+        # неизменившийся файл приходит как 304, без повторной загрузки.
+        cache = 'no-cache'
         s3.upload_file(path, bucket, key, ExtraArgs={'ContentType': ctype, 'CacheControl': cache})
         print('uploaded', key, os.path.getsize(path), 'bytes', ctype)
 print('bucket objects:', [o['Key'] for o in s3.list_objects_v2(Bucket=bucket).get('Contents', [])])
