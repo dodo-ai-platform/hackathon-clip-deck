@@ -1,24 +1,37 @@
-# Project Name
+# hackathon-clip-deck
 
-AI Platform project. See `PLATFORM.md` for infrastructure details, credentials, and kubeconfig.
+Презентация «Скрепка для Додо ИС» — рыба презентации к хакатону.
+Один самодостаточный HTML-файл: весь CSS и JS внутри, внешних зависимостей нет.
 
-## Quick Start
+Открыть: **https://hackathon-clip-deck.dodo-ai-platform.io/** (вход по корпоративному Google SSO).
 
-1. Replace `myapp` in `k8s/deployment.yaml`, `k8s/service.yaml` with your app name
-2. Update `Dockerfile` for your language/runtime
-3. Update image reference in `k8s/deployment.yaml`: `ghcr.io/dodo-ai-platform/<repo-name>:IMAGE_TAG`
-4. Uncomment `envFrom` in deployment if you use database, mongodb, or bucket
-5. Push to `main` — CI builds, pushes to GHCR, and deploys automatically
+Инфраструктура, kubeconfig и реквизиты — в `PLATFORM.md` (его пишет оператор, руками не редактируем).
 
-## Local Development
+## Как это задеплоено
+
+Проект чисто статический: **пода нет**, namespace выделен с нулевой compute-квотой (`pods=0`).
+`site/index.html` лежит в бакете `site` (`access: restricted`), платформа отдаёт его маршрутом `/`
+за корпоративным SSO. Прямая ссылка на объектное хранилище отдаёт 403 — файлы не забрать в обход входа.
+
+Поэтому в репозитории нет ни `Dockerfile`, ни `k8s/`, ни workflow сборки образа: собирать и катить нечего.
+
+## Обновить презентацию
+
+Правим `site/index.html`, затем заливаем в бакет:
 
 ```bash
-# Port-forward to your service
-kubectl port-forward svc/myapp -n <project-name> 8080:8080
-
-# Check logs
-kubectl logs deploy/myapp -n <project-name>
-
-# Check events
-kubectl get events -n <project-name> --sort-by='.lastTimestamp'
+export KUBECONFIG=~/.kube/config:~/.kube/hackathon-clip-deck.yaml
+kubectl config use-context hackathon-clip-deck
+for k in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_ENDPOINT S3_BUCKET S3_REGION; do
+  export $k="$(kubectl get secret hackathon-clip-deck-site-credentials \
+    -n hackathon-clip-deck -o jsonpath="{.data.$k}" | base64 -d)"
+done
+python3 scripts/upload-site.py
 ```
+
+`index.html` заливается с `Cache-Control: no-cache`, остальные файлы — с годовым иммутабельным кэшем,
+так что новая версия презентации видна сразу.
+
+Точка входа обязана называться `index.html` — это фиксированное имя для статического маршрута.
+Ссылки на любые дополнительные файлы делаем относительными (`/assets/…`), а не прямыми URL хранилища:
+браузер пойдёт в хранилище напрямую и получит 403.
