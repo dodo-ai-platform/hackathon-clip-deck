@@ -105,7 +105,7 @@ After uploading, reach the files **through the route** (your route `path`, e.g. 
 ## HTTP Routes
 
 Host: `https://hackathon-clip-deck.dodo-ai-platform.io` — TLS automatic (cert-manager), ingress class nginx.
-- `pending` → bucket — 🔒 corporate email only (SSO via Pomerium)
+- `https://hackathon-clip-deck.dodo-ai-platform.io/` → bucket — 🔒 corporate email only (SSO via Pomerium)
 - Auth, TLS and routing are managed by the operator from `spec.routes`.
 - **Auth modes:** `none` (public) · `corp` (any corporate email) · `owners` (only `spec.owners`) · `allowlist` (only the corporate emails you list). Applies to both app (`service`) and static (`bucket`) routes.
 - **`auth: allowlist`** — for a fixed set of internal people between `corp` and `owners`. Add `allowedEmails: [a@dodobrands.io, …]` on the route. **Owners are denied by default too** — an owner gets access only if their email is in `allowedEmails` (the list is exactly who gets in). If an owner needs web access, add their email. To debug your app without web access, use `kubectl port-forward` (owners always have kube access). Only corporate-domain emails are accepted (external accounts can't log in via SSO). Close both the app-route and the bucket-route to gate the whole site.
