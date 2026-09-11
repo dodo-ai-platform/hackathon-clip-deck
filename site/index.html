@@ -562,7 +562,8 @@
       </div>
 
       <div class="editbar" id="editbar">
-        <span>Режим правки: щёлкните по тексту и печатайте. Правки сохраняются автоматически.</span>
+        <span id="edithint">Режим правки: щёлкните по тексту и печатайте. Правки сохраняются только в этом браузере.</span>
+        <button class="win" id="publish" hidden>Опубликовать для всех</button>
         <button class="win" id="editdone">Готово</button>
       </div>
       <div class="statusbar">
@@ -934,13 +935,21 @@
     };
   };
 
-  document.getElementById('mi-save').onclick = function(){
-    closeMenus();
-    if (editMode) setEdit(false);
-    try {
+  // Адрес сервиса сохранения. null — сервис ещё не развёрнут (проект чисто
+  // статический, в namespace нет compute-квоты), кнопка «Опубликовать для всех»
+  // не показывается и презентация ведёт себя как обычная статика. Когда сервис
+  // поднимут, здесь ставится '/save' — подробности в README репозитория.
+  var PUBLISH_URL = null;
+
+  // Снимок презентации целиком, пригодный для сохранения: без следов режима
+  // правки и открытых окон, с первого слайда и экрана загрузки.
+  function buildHtml(){
       var clone = document.documentElement.cloneNode(true);
       clone.querySelectorAll('[contenteditable]').forEach(function(n){ n.removeAttribute('contenteditable'); });
-      clone.querySelectorAll('.pet').forEach(function(n){ n.removeAttribute('style'); });
+      // Питомцы на рабочем столе создаются скриптом при загрузке. Если оставить
+      // их в снимке, следующая публикация запечёт поверх ещё один комплект —
+      // и так каждый раз. Контейнер чистим, при открытии они появятся сами.
+      var pe = clone.querySelector('#pets'); if (pe) pe.innerHTML = '';
       ['stage','clip','gamewin','skinwin','dialog','splash','shutdown','startmenu','sub-prog','sub-docs','editbar']
         .forEach(function(id){ var n = clone.querySelector('#' + id); if (n) n.classList.remove('on','open'); });
       var pp = clone.querySelector('#paper');
@@ -950,8 +959,14 @@
       var bios = clone.querySelector('#bios'); if (bios) bios.classList.add('on');
       var bt = clone.querySelector('#biostext'); if (bt) bt.textContent = '';
       clone.querySelectorAll('.task').forEach(function(n){ n.classList.remove('on'); });
-      var html = '<!DOCTYPE html>\n' + clone.outerHTML;
-      var blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+      return '<!DOCTYPE html>\n' + clone.outerHTML;
+  }
+
+  document.getElementById('mi-save').onclick = function(){
+    closeMenus();
+    if (editMode) setEdit(false);
+    try {
+      var blob = new Blob([buildHtml()], {type: 'text/html;charset=utf-8'});
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'презентация-скрепка.html';
@@ -961,6 +976,38 @@
       dlg('Не получилось', '⚠️', 'Браузер не дал сохранить файл. Попробуйте открыть деку в Chrome.');
     }
   };
+
+  // Публикация правок для всех. Кнопки нет, пока PUBLISH_URL не задан, — чтобы
+  // не обещать того, чего платформа сейчас не умеет.
+  var publishBtn = document.getElementById('publish');
+  if (PUBLISH_URL) {
+    publishBtn.hidden = false;
+    publishBtn.onclick = function(){
+      if (editMode) setEdit(false);
+      var label = publishBtn.textContent;
+      publishBtn.disabled = true;
+      publishBtn.textContent = 'Публикую…';
+      fetch(PUBLISH_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/html; charset=utf-8'},
+        body: buildHtml(),
+        credentials: 'same-origin'
+      }).then(function(r){
+        if (r.status === 401 || r.status === 403) throw new Error('публиковать могут только редакторы из списка');
+        if (!r.ok) return r.text().then(function(t){ throw new Error(t || ('сервис ответил ' + r.status)); });
+        return r.json();
+      }).then(function(){
+        dlg('Опубликовано', '💾', 'Правки сохранены на платформе. Остальным достаточно обновить страницу.');
+      }).catch(function(e){
+        dlg('Не опубликовалось', '⚠️',
+          'Правки никуда не делись — они сохранены в этом браузере, и их можно выгрузить через «Файл → Сохранить как».<br><br>Причина: '
+          + ((e && e.message) ? e.message : 'сервис недоступен') + '.');
+      }).then(function(){
+        publishBtn.disabled = false;
+        publishBtn.textContent = label;
+      });
+    };
+  }
 
   /* ---------- Змейка ---------- */
   var gamewin = document.getElementById('gamewin');

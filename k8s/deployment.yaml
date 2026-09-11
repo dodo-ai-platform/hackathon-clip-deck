@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hackathon-clip-deck
+  namespace: hackathon-clip-deck
+  labels:
+    app: hackathon-clip-deck
+spec:
+  replicas: 1
+  # Recreate, а не RollingUpdate: квота namespace выдана впритык под один под,
+  # лишний под во время выкатки упёрся бы в неё и деплой встал бы.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hackathon-clip-deck
+  template:
+    metadata:
+      labels:
+        app: hackathon-clip-deck
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/dodo-ai-platform/hackathon-clip-deck:IMAGE_TAG
+          ports:
+            - containerPort: 8080
+          # Ключи от бакета приходят из секрета, в образ они не попадают.
+          envFrom:
+            - secretRef:
+                name: hackathon-clip-deck-site-credentials
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.infra-alloy.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "hackathon-clip-deck"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "k8s.pod.ip=$(POD_IP),k8s.pod.uid=$(POD_UID)"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault

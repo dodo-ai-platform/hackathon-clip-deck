@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hackathon-clip-deck
+  namespace: hackathon-clip-deck
+  labels:
+    app: hackathon-clip-deck
+spec:
+  selector:
+    app: hackathon-clip-deck
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
